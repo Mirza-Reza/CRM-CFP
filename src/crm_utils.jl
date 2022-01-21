@@ -1,21 +1,26 @@
 __precompile__()
-using LinearAlgebra
-using Printf
-using Random
-using Distributions
-using ProximalOperators
-using PolynomialRoots
+
 using DelimitedFiles
 using Dates
+using Distributions
+using LinearAlgebra
+using PolynomialRoots
+using Printf
+using ProximalOperators
+using Random
+using SparseArrays 
+
 import Base.@kwdef
 ####################################
 @kwdef struct Results
     iter_total::Int
-    final_tol::Float64
-    xApprox::Vector
+    final_tol::Number
+    xApprox::AbstractVector
     method::Symbol
     date::DateTime = Dates.now()
 end
+
+Results() = Results(iter_total = 0, final_tol=0.0, xApprox = [], method = :None)
 ####################################
 """
 FindCircumcentermSet(X)
@@ -72,6 +77,27 @@ function FindCircumcentermSet(X)
         end
         return CC
     end
+####################################
+function FindCircumcentermSet(X::Vector{Vector{BigFloat}})
+     lengthX = length(X)
+    lengthX > 3 && error("Only computes BigFloat Circumcenter up to three")
+     if lengthX  == 1
+            return X[1]
+        elseif lengthX == 2
+            return .5*(X[1] + X[2])
+    end
+    x, y, z = X
+	Sᵤ = y - x
+	Sᵥ = z - x
+	norm_Sᵤ = dot(Sᵤ,Sᵤ)
+	norm_Sᵥ = dot(Sᵥ,Sᵥ)
+	prod = dot(Sᵤ, Sᵥ)
+	A_inv = [norm_Sᵥ -prod; -prod norm_Sᵤ]./(norm_Sᵤ*norm_Sᵥ - prod^2)
+	b = [1/2 .*norm_Sᵤ; 1/2 .*norm_Sᵥ]
+	sol = A_inv*b
+	C = x + sol[1]*Sᵤ + sol[2]*Sᵥ
+	return C
+end
 ####################################
 """
     proj = ProjectIndicator(indicator,x)
@@ -130,7 +156,7 @@ end
         return A, a, ma, B, b, mb
     end
 ####################################
-function printoOnFile(filename::String,printline::AbstractArray; deletefile::Bool=false)
+function printOnFile(filename::String,printline::AbstractArray; deletefile::Bool=false)
     if isempty(filename)
         return
     end
@@ -141,6 +167,24 @@ function printoOnFile(filename::String,printline::AbstractArray; deletefile::Boo
             # @warn e
         end
     end
+    open(filename,"a") do file
+        writedlm(file,printline)
+    end
+end
+
+####################################
+function printOnFile(filename::String, k::Int, tolCRM::Number, xCRM::AbstractVector; deletefile::Bool=false, isprod::Bool = false)
+    if isempty(filename)
+        return
+    end
+    if deletefile
+        try
+            rm(filename)
+        catch e
+            # @warn e
+        end
+    end
+    isprod ? printline = hcat(k, tolCRM, xCRM[1]') : printline = hcat(k, tolCRM, xCRM')
     open(filename,"a") do file
         writedlm(file,printline)
     end
@@ -193,7 +237,7 @@ Returns the orthogonal projection of `x` onto the L2-Ball  centered in `v` with 
 Uses the `ProximalOperators.jl` toolbox
 
 """
-function ProjectBall(x::Vector, v::Vector, r::Number)
+function ProjectBall(x::AbstractVector, v::AbstractVector, r::Number)
         Ball = IndBallL2(r)
         proj, fproj = prox(Translate(Ball,-v),x)
         return proj
@@ -204,7 +248,7 @@ ProjectProdDiagonal(X,num_sets)
 
 
 """
-function ProjectProdDiagonal(X::Vector)
+function ProjectProdDiagonal(X::AbstractVector)
     inner_proj = mean(X)
     proj = similar(X)
     for index in eachindex(proj)
@@ -220,7 +264,7 @@ ProjectProdSets(X,Projections)
 
 
 """
-function ProjectProdSets(X::Vector,SetsProjections::Vector{Function})
+function ProjectProdSets(X::AbstractVector,SetsProjections::AbstractVector{Function})
     proj = similar(X)
     for index in eachindex(proj)
         proj[index] = SetsProjections[index](X[index])
@@ -233,7 +277,7 @@ end
 ProjectSetsIndicators(X,SetsIndicators)
 Projection on the Product Space of Half Spaces
 """
-function ProjectSetsIndicators(X::Vector,SetsIndicators::Vector{ProximableFunction})
+function ProjectSetsIndicators(X::AbstractVector,SetsIndicators::AbstractVector{ProximableFunction})
     proj = similar(X)
     for index in eachindex(SetsIndicators)
         proj[index] = ProjectIndicator(SetsIndicators[index],X[index])
@@ -243,15 +287,15 @@ end
 
 ####################################
 
-ProjectProdSpace(X::Vector,Projections::Vector{Function}) = ProjectProdSetSpace(X,Projections)
-ProjectProdSpace(X::Vector,Projections::Vector{ProximableFunction}) = ProjectSetsIndicators(X,Projections)
+ProjectProdSpace(X::AbstractVector,Projections::AbstractVector{Function}) = ProjectProdSets(X,Projections)
+ProjectProdSpace(X::AbstractVector,Projections::AbstractVector{ProximableFunction}) = ProjectSetsIndicators(X,Projections)
 
 ####################################
 
 """
         Tolerance(x,xold;xsol,normytpe)
 """
-function  Tolerance(x::Vector,xold::Vector,xsol::Vector;
+function  Tolerance(x::AbstractVector,xold::AbstractVector,xsol::AbstractVector;
     norm_p::Number=2)
     if isempty(xsol)
         return norm(x-xold,norm_p)
@@ -260,3 +304,17 @@ function  Tolerance(x::Vector,xold::Vector,xsol::Vector;
     end
 end
 
+####################################
+"""
+    ApproxProject(x,g,∂g)
+
+"""
+function ApproxProject(x::AbstractVector,g::Function,∂g::Function;λ::Number=1.0)
+    gx = g(x)
+    if gx ≤ 0
+        return x
+    else
+        ∂gx = ∂g(x)
+        return λ*( x .- (gx/dot(∂gx,∂gx))*∂gx ).+ (1-λ)*x
+    end
+end

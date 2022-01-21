@@ -1,3 +1,11 @@
+__precompile__()
+using DrWatson
+@quickactivate "CRM-CFP"
+include(srcdir("CRM-CFP.jl"))
+using CSV, DataFrames
+using BenchmarkProfiles, LaTeXStrings, Plots
+# pgfplotsx()
+
 """juliadocs
 This script builds the plots that are presented in Figure 4.1 of Example 4.12 from [^Arefidamghani20]
 
@@ -42,7 +50,7 @@ function FigureQuadratic(α::Number,β::Number, x₀::Vector, xSol::Vector,ε::N
                 label="")                
         scatter!(scatter_points_mtd_x,scatter_points_mtd_y, c=mrk_color[index], marker=(3,:circle),
                 label="$(String(mtd)) ($(Result.iter_total) it.)")        
-        MethodPath(plt,xmtd)
+       method_path(plt,xmtd)
     end
     return plt,filedirs
 end
